@@ -1,0 +1,20 @@
+name: CI for Fork PRs
+
+on:
+  pull_request_target:
+    # Note: Repo must be set to require approval before running workflows from forks
+    # This only runs basic checks without secrets for safety
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  basic-checks:
+    uses: ./.github/workflows/_reusable-ci.yml
+    with:
+      checkout_ref: ${{ github.event.pull_request.head.sha }}
+      checkout_repository: ${{ github.event.pull_request.head.repo.full_name }}
+      check_type: 'basic'
+    secrets: inherit

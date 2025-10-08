@@ -1,0 +1,57 @@
+name: Full CI (Comment Triggered)
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  trigger-check:
+    if: |
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/run-full-ci') &&
+      github.event.comment.author_association == 'OWNER'
+    runs-on: ubuntu-latest
+    outputs:
+      pr_head_sha: ${{ steps.pr.outputs.pr_head_sha }}
+      pr_head_repo: ${{ steps.pr.outputs.pr_head_repo }}
+
+    steps:
+      - name: Get PR details
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            core.setOutput('pr_head_sha', pr.data.head.sha);
+            core.setOutput('pr_head_repo', pr.data.head.repo.full_name);
+
+  full-ci:
+    needs: trigger-check
+    uses: ./.github/workflows/_reusable-ci.yml
+    with:
+      checkout_ref: ${{ needs.trigger-check.outputs.pr_head_sha }}
+      checkout_repository: ${{ needs.trigger-check.outputs.pr_head_repo }}
+      check_type: 'full'
+      environment: 'demo'
+    secrets: inherit
+
+  comment-result:
+    needs: [trigger-check, full-ci]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ needs.full-ci.result }}' === 'success' ? '✅ PASSED' : '❌ FAILED';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `Full CI ${status} for commit ${{ needs.trigger-check.outputs.pr_head_sha }}\n\nTriggered by: @${{ github.event.comment.user.login }}`
+            });

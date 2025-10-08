@@ -1,0 +1,56 @@
+name: Full CI (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to run full CI against'
+        required: true
+        type: string
+
+jobs:
+  get-pr-info:
+    runs-on: ubuntu-latest
+    outputs:
+      head_sha: ${{ steps.pr-info.outputs.head_sha }}
+      head_repo: ${{ steps.pr-info.outputs.head_repo }}
+    steps:
+      - name: Get PR details
+        id: pr-info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: ${{ inputs.pr_number }}
+            });
+            core.setOutput('head_sha', pr.data.head.sha);
+            core.setOutput('head_repo', pr.data.head.repo.full_name);
+
+  full-ci:
+    needs: get-pr-info
+    uses: ./.github/workflows/_reusable-ci.yml
+    with:
+      checkout_ref: ${{ needs.get-pr-info.outputs.head_sha }}
+      checkout_repository: ${{ needs.get-pr-info.outputs.head_repo }}
+      check_type: 'full'
+      environment: 'demo'
+    secrets: inherit
+
+  comment-result:
+    needs: [get-pr-info, full-ci]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ needs.full-ci.result }}' === 'success' ? '✅ PASSED' : '❌ FAILED';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ inputs.pr_number }},
+              body: `Full CI ${status} for commit ${{ needs.get-pr-info.outputs.head_sha }} (manually triggered)`
+            });

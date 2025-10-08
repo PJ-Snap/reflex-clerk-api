@@ -1,0 +1,55 @@
+name: 'Full CI Checks'
+description: 'Runs full CI including integration tests with secrets'
+inputs:
+  clerk-publishable-key:
+    description: 'Clerk publishable key'
+    required: true
+  clerk-secret-key:
+    description: 'Clerk secret key'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Check env vars set
+      run: |
+        if [ -z "${{ inputs.clerk-publishable-key }}" ]; then
+          echo "CLERK_PUBLISHABLE_KEY is not set"
+          exit 1
+        fi
+        if [ -z "${{ inputs.clerk-secret-key }}" ]; then
+          echo "CLERK_SECRET_KEY is not set"
+          exit 1
+        fi
+      shell: bash
+
+    - name: Create .env
+      run: |
+        echo "CLERK_PUBLISHABLE_KEY=${{ inputs.clerk-publishable-key }}" >> .env
+        echo "CLERK_SECRET_KEY=${{ inputs.clerk-secret-key }}" >> .env
+      shell: bash
+
+    - name: DEBUG - check python version
+      run: uv sync && uv run python --version
+      shell: bash
+
+    - name: Run lint
+      run: task lint
+      shell: bash
+
+    - name: Run typecheck
+      run: task typecheck
+      shell: bash
+
+    - name: Initialize Reflex
+      run: uv run reflex init
+      working-directory: clerk_api_demo
+      shell: bash
+
+    - name: Install playwright
+      run: uv run playwright install chromium
+      shell: bash
+
+    - name: Run tests
+      run: task test
+      shell: bash
